@@ -1,0 +1,149 @@
+
+/**
+ * Code is taken from Computer Networking: A Top-Down Approach Featuring
+ * the Internet, second edition, copyright 1996-2002 J.F Kurose and K.W. Ross,
+ * All Rights Reserved.
+ **/
+
+import java.io.*;
+import java.net.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Timer;
+import java.util.TimerTask;
+
+class TCPClient {
+	public static String command;
+	public static BufferedReader inFromUser;
+	public static Socket clientSocket;
+	public static DataOutputStream outToServer;
+	public static BufferedReader inFromServer;
+	
+	public static String response;
+	public static byte[] byteReponse;
+	
+	public static void main(String argv[]) throws Exception {
+
+		inFromUser = new BufferedReader(new InputStreamReader(System.in));
+		
+		while (true) {
+			System.out.println("Client is currently not connected. Please type \"connect\" to connect to the server");
+			if (inFromUser.readLine().equals("connect")) {
+				clientSocket = new Socket("localhost", 6789);
+				
+				outToServer = new DataOutputStream(clientSocket.getOutputStream());
+		
+				inFromServer = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+				
+				while (true) {
+					readServerResponse();
+					
+					if (response.equals("+Ending connection")) {
+						break;
+					}
+					command = inFromUser.readLine();
+					sendCommand();
+					
+					if (command.startsWith("RETR ")) {
+						readServerResponse();
+						if (response.substring(0,1).equals("-")) {
+							continue;
+						}
+						
+						String fileName = command.substring(5);
+						String filePath = "./clientFiles/" + fileName;
+						//System.out.println("File path: " + filePath);
+						File file = new File(filePath);
+						
+						if (file.isFile() || Integer.parseInt(response.substring(1)) > new File("./clientFiles/").getUsableSpace()) {
+							System.out.println(file.isFile());
+							System.out.println(Integer.parseInt(response.substring(1)) > new File("./clientFiles/").getUsableSpace());
+							command = "STOP";
+							sendCommand();
+							continue;
+						}
+						
+						while (true) {
+							while (command.length() < 4) {
+								command = inFromUser.readLine();
+							}
+							sendCommand();
+							if (command.substring(0,4).equals("SEND")) {
+								Retrieve();
+								
+								Files.write(Paths.get(filePath), response.getBytes());
+								break;
+							}
+							else if (command.substring(0,4).equals("STOP")) {
+								break;
+							}
+							readServerResponse();
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	public static void readServerResponse() {
+		StringBuilder sb = new StringBuilder();
+		while (true) {
+			try {
+				char responseChar = (char) inFromServer.read();
+				if (responseChar == '\0') {
+					break;
+				}
+				sb.append(responseChar);
+				
+			}
+			catch (IOException e) {
+				System.out.println(e.getMessage());
+			}
+		}
+		response = sb.toString();
+		System.out.println("FROM SERVER: " + response);
+	}
+	
+	public static void sendCommand() {
+		char[] commandChars = command.toCharArray();
+		for (int i = 0; i < commandChars.length; i++) {
+			try {
+				outToServer.write(commandChars[i]);
+			}
+			catch (IOException e) {
+				e.getMessage();
+			}
+		}
+		
+		try {
+			outToServer.write('\0');
+		}
+		catch (IOException e) {
+			e.getMessage();
+		}
+	}
+	
+	public static void Retrieve() {
+		StringBuilder sb = new StringBuilder();
+		
+		long startTime = System.currentTimeMillis();
+		int i = 0;
+		while (false||(System.currentTimeMillis()-startTime)<1000) {
+			try {
+				startTime = System.currentTimeMillis();
+				char responseChar = (char) inFromServer.read();
+				if (responseChar == '\0') {
+					break;
+				}
+				sb.append(responseChar);
+				
+			}
+			catch (IOException e) {
+				System.out.println(e.getMessage());
+			}
+		}
+		response = sb.toString();
+		System.out.println("File contains: " + response);
+	}
+}

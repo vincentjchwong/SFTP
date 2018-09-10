@@ -1,0 +1,473 @@
+
+/**
+ * Code is taken from Computer Networking: A Top-Down Approach Featuring
+ * the Internet, second edition, copyright 1996-2002 J.F Kurose and K.W. Ross,
+ * All Rights Reserved.
+ **/
+
+import java.io.*;
+import java.net.*;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.*;
+import java.util.List;
+import com.google.gson.*;
+
+class TCPServer {
+	
+	// Socket to connect to client socket
+	public static Socket connectionSocket;
+	
+	// JSON objects for data
+	public static File usersFile;
+	public static Gson gson;
+	public static JsonObject jsonObject;
+	public static JsonArray users;
+	public static JsonObject currentUser = null;
+
+	// Data streams
+	public static DataOutputStream outToClient;
+	public static BufferedReader inFromClient;
+	public static String command;
+	public static String cmd;
+	public static String argument;
+	public static String currentType;
+	public static String currentDirectory;
+
+	public static void main(String argv[]) throws Exception {
+		updateUsers();
+		boolean serverOpen = true;
+		
+		ServerSocket welcomeSocket = new ServerSocket(6789);
+		
+		// Keep the server running and resetting the statuses to their default values
+		while (true) {
+			updateUsers();
+			
+			currentUser = null;
+			currentType = "ASCII";
+			currentDirectory = "./serverFiles";
+			
+			// Wait for client connection then set up data streams
+			System.out.println("Server is waiting for incoming socket connection");
+			connectionSocket = welcomeSocket.accept();
+			outToClient = new DataOutputStream(connectionSocket.getOutputStream());
+			inFromClient = new BufferedReader(new InputStreamReader(connectionSocket.getInputStream()));
+			
+			// If server is open to clients, send welcome and run protocol
+			if (serverOpen) {
+				Success("localhost SFTP Service");
+				while (awaitCommand()) {
+				}
+			}
+			// If server is closed to clients, send error message and close socket
+			else {
+				Error("localhost Out to Lunch");
+
+				connectionSocket.close();
+			}
+		}
+	}
+
+	// Read in user database file and update users jsonObject
+	public static void updateUsers() throws JsonSyntaxException, JsonIOException, FileNotFoundException {
+		usersFile = Paths.get("/Users/Vince/source/repos/SFTP/src/users.json").toFile();
+		gson = new Gson();
+		jsonObject = gson.fromJson(new FileReader(usersFile), JsonObject.class);
+		users = jsonObject.getAsJsonArray("users");
+	}
+	
+	// Wait for command input from client then update cmd and argument
+	public static void readCommand() throws IOException {
+		StringBuilder sb = new StringBuilder();
+		while (true) {
+			char commandChar = (char) inFromClient.read();
+			if (commandChar == '\0') {
+				break;
+			}
+			sb.append(commandChar);
+		}
+		command = sb.toString();
+		System.out.println("Received command: " + command + '\n');
+		cmd = command.substring(0, Math.min(command.length(), 4));
+		if (command.length() > 4) {
+			argument = command.substring(5, command.length());
+		}
+		else {
+			argument = "";
+		}
+	}
+	
+	// Act on new command
+	public static boolean awaitCommand() throws IOException {
+		// If there is no user currently logged in
+		if (currentUser == null) {
+			System.out.println("Connected to client\n");
+			System.out.println("No user logged in\n");
+			// Wait for user to log in. If the client does not log in, close the connection
+			if (!LogIn()) {
+				Success("Ending connection");
+				connectionSocket.close();
+				currentUser = null;
+				return false;
+			}
+			System.out.println("User " + currentUser + " is logged in\n");
+			return true;
+		}
+		// Act on the incoming command
+		else {
+			System.out.println("Awaiting command\n");
+			readCommand();
+
+			switch (cmd) {
+			case "TYPE":
+				if (Type()) {
+					Success("Using " + currentType + " mode");
+				}
+				else {
+					Error("Type not valid");
+				}
+				break;
+			case "LIST":
+				if (List()) {
+				}
+				else {
+					Error("List command not valid");
+				}
+				break;
+			case "CDIR":
+				if (ChangeDirectory()) {
+					sendResponse("!Change working dir to " + currentDirectory);
+				}
+				break;
+			case "KILL":
+				if (Kill()) {
+					Success(argument + " deleted");
+				}
+				else {
+					Error("Not deleted because: File does not exist");
+				}
+				break;
+			case "NAME":
+				if (Name()) {
+					Success(argument + " renamed to " + argument);
+				}
+				break;
+			case "DONE":
+				Done();
+				return false;
+			case "RETR":
+				if (Retreive()) {
+					Success("File was sent");
+				}
+				else {
+					Success("RETR aborted");
+				}
+				break;
+			case "STOR":
+				break;
+			default:
+				Error("Invalid command");
+			}
+		}
+		return true;
+	}
+
+	// Keep asking for the user to log in unless the user decides to end the connection
+	// Returns a response beginning with !
+	public static boolean LogIn() throws IOException {
+		readCommand();
+		if (cmd.equals("USER")) {
+			// Search through the JsonArray of users to see if the requested user exists
+			for (JsonElement user : users) {
+				if (user.getAsJsonObject().get("userid").getAsString().equals(argument)) {
+					currentUser = user.getAsJsonObject();
+					if (!currentUser.get("account").getAsString().equals("")) { // If the user has an account
+						Success("User-id valid, send account and password");
+						String currentAccount = "";
+						String currentPassword = "";
+						while(true) {
+							readCommand();
+							// Request Account information if there is an account bound to the userid
+							if (cmd.equals("ACCT")) {
+								if (argument.equals(currentUser.get("account").getAsString())) {
+									currentAccount = argument;
+									if (currentPassword.equals(currentUser.get("password").getAsString())) {
+										sendResponse("!Account valid, logged-in");
+										return true;
+									}
+									else {
+										Success("Account valid, send password");
+									}
+								}
+								else {
+									Error("Invalid account, try again");
+								}
+							}
+							else if (cmd.equals("PASS")) {
+								if (argument.equals(currentUser.get("password").getAsString())) {
+									currentPassword = argument;
+									if (currentAccount.equals(currentUser.get("account").getAsString())) {
+										sendResponse("!Logged in");
+										return true;
+									}
+									else {
+										Success("Send account");
+									}
+								}
+								else {
+									Error("Wrong password, try again");
+								}
+							}
+							else if (cmd.equals("DONE")) {
+								return false;
+							}
+							else {
+								Error("Invalid command. Please enter account and/or password");
+							}
+						}
+					}
+					sendResponse('!' + currentUser.get("userid").getAsString() + " logged in");
+					return true;
+				}
+			}
+			Error("Invalid userid, try again");
+			return LogIn();
+		}
+		else {
+			Error("Invalid command. Please log in using USER <userid>");
+			return LogIn();
+		}
+	}
+
+	// Act on cmd TYPE
+	public static boolean Type() {
+		switch (argument) {
+		case "A":
+			currentType = "Ascii";
+			return true;
+		case "B":
+			currentType = "Binary";
+			return true;
+		case "C":
+			currentType = "Continuous";
+			return true;
+		default:
+			return false;
+		}
+	}
+	
+	// Act on cmd LIST
+	public static boolean List() throws IOException {
+		String listFormat;
+		String listDir = null;
+		
+		File fileDir;
+		File[] fileList;
+		
+		// Find which directory the user is asking for
+		if (argument.length() > 1 && (argument.substring(0,2).equals("F ") || argument.substring(0,2).equals("V "))) {
+			listFormat = argument.substring(0,1);
+			listDir = currentDirectory + '/' + argument.substring(2);
+		}
+		else if (argument.length() == 1 && (argument.substring(0).equals("F") || argument.substring(0).equals("V"))) {
+			listFormat = argument.substring(0);
+			listDir = currentDirectory;
+		}
+		else {
+			return false;
+		}
+		
+		// Check if the requested path exists
+		fileDir = new File(listDir);
+		if (!fileDir.exists()) {
+			return false;
+		}
+		
+		// Creates a string of the requested path to display
+		StringBuilder dirName = new StringBuilder("");
+		for (int i = listDir.length()-1; listDir.charAt(i) != '/'; i--) {
+			dirName.insert(0, listDir.charAt(i));
+		}
+		
+		fileList = fileDir.listFiles();
+		
+		// Builds a string containing all requested information
+		StringBuilder allFiles;
+		switch (listFormat) {
+		case "F":
+			allFiles = new StringBuilder();
+			for (File file : fileList) {
+				allFiles.append("\r\n");
+				allFiles.append(file.getName());
+			}
+			Success("PS: <" + dirName.toString() + ">" + allFiles.toString());
+			break;
+		case "V":
+			allFiles = new StringBuilder();
+			BasicFileAttributes fileAttr;
+			for (File file : fileList) {
+				allFiles.append("\r\n");
+				allFiles.append(file.getName());
+					fileAttr = Files.readAttributes(Paths.get(listDir + "/" + file.getName()), BasicFileAttributes.class);
+					allFiles.append(" " + fileAttr.size() + " " + fileAttr.lastModifiedTime() + " Read only:[" + Files.getAttribute(Paths.get(listDir + "/" + file.getName()), "dos:readonly") + "]" + " " + Files.getOwner(Paths.get(listDir + "/" + file.getName())));
+			}
+			Success("PS: <" + dirName.toString() + ">" + allFiles.toString());
+			break;
+		default:
+			return false;
+		}
+		return true;
+	}
+	
+	// Act on cmd CDIR
+	public static boolean ChangeDirectory() {
+		if (argument.equals("")) {
+			if (currentDirectory.equals("./serverFiles")) {
+				Error("Can't connect to directory because: This is the top of the directory");
+				return false;
+			}
+			for (int i = currentDirectory.length()-1; currentDirectory.charAt(i) != '/'; i--) {
+				currentDirectory = currentDirectory.substring(0, i);
+			}
+			currentDirectory = currentDirectory.substring(0, currentDirectory.length()-1);
+			return true;
+		}
+		
+		String newDir = currentDirectory + "/" + argument;
+		File tempDir = new File(newDir);
+		
+		// Check if directory exists
+		if (!tempDir.isDirectory() || argument.equals("")) {
+			Error("Can't connect to directory because: Directory does not exist");
+			return false;
+		}
+		currentDirectory = newDir;
+		return true;
+	}
+	
+	// Act on cmd KILL
+	public static boolean Kill() {
+		String newDir = currentDirectory + "/" + argument;
+		File tempDir = new File(newDir);
+		
+		// Check if directory exists
+		if (!tempDir.isFile()) {
+			return false;
+		}
+		
+		tempDir.delete();
+		
+		return true;
+	}
+	
+	// Act on cmd NAME
+	public static boolean Name() throws IOException {
+		String fileDir = currentDirectory + "/" + argument;
+		File file = new File(fileDir);
+		
+		// Check if directory exists
+		if (!file.isFile()) {
+			Error("Can't find " + argument);
+			return false;
+		}
+		
+		Success("File exists");
+		
+		readCommand();
+		if (cmd.equals("TOBE")) {
+			try {
+				Files.move(Paths.get(fileDir), Paths.get(fileDir).resolveSibling(argument));
+				return true;
+			}
+			catch(IOException e) {
+				Error("File wasn't renamed because: Invalid new name");
+				return false;
+			}
+		}
+		
+		Error("File wasn't renamed because: TOBE command was not sent");
+		
+		return false;
+	}
+	
+	// Act on cmd DONE
+	public static void Done() throws IOException {
+		Success("Ending connection");
+		connectionSocket.close();
+		currentUser = null;
+	}
+	
+	// Act on cmd RETR
+	public static boolean Retreive() throws NumberFormatException, IOException {
+		String fileDir = currentDirectory + "/" + argument;
+		File file = new File(fileDir);
+		
+		// Check if directory exists
+		if (!file.isFile()) {
+			Error("File doesn't exist");
+			return false;
+		}
+
+		Number(Integer.parseInt(Files.getAttribute(Paths.get(fileDir), "basic:size").toString()));
+		
+		while (true) {
+			System.out.println("Waiting for SEND command\n");
+			readCommand();
+			if (cmd.equals("SEND")) {
+				System.out.println("Sending file");
+				sendFile(fileDir);
+				return true;
+			}
+			else if (cmd.equals("STOP")) {
+				return false;
+			}
+		}
+	}
+	
+	// Send the requested file to the client
+	public static void sendFile(String fileDir) throws IOException {
+		byte[] fileBuffer = Files.readAllBytes(Paths.get(fileDir));
+		sendResponse(new String(fileBuffer));
+//		for (byte fileByte : fileBuffer) {
+//			sendResponse(new String(fileByte));
+//		}
+//		
+//		for (int i = 0; i < Integer.parseInt(Files.getAttribute(Paths.get(fileDir), "basic:size").toString()); i++) {
+//			sendResponse(new String(fileBuffer,i,i));
+//		}
+	}
+	
+	// Response functions
+	public static void Success(String message) {
+		sendResponse('+' + message);
+	}
+
+	public static void Error(String message) {
+		sendResponse('-' + message);
+	}
+
+	public static void Number(int message) {
+		sendResponse(' ' + Integer.toString(message));
+	}
+	
+	public static void sendResponse(String response) {
+		char[] responseChars = response.toCharArray();
+		for (int i = 0; i < responseChars.length; i++) {
+			try {
+				outToClient.write(responseChars[i]);
+			}
+			catch (IOException e) {
+				e.getMessage();
+			}
+		}
+		
+		try {
+			outToClient.write('\0');
+		}
+		catch (IOException e) {
+			e.getMessage();
+		}
+	}
+}
