@@ -58,14 +58,14 @@ You should see the following messages:
 Server: Server is waiting for incoming socket connection
 Client: Client is currently not connected. Please type "connect" to connect to the server
 
-###connect
+### connect
 
 >Here you should be able to enter the "connect" command into the client
 (For ease of repetitive testing, I have implemented a "connect" command that allows the client to connect to the server after it has disconnected)
 You should see the following message:
 Client: FROM SERVER: +localhost SFTP Service
 
-###USER
+### USER
 
 >You are now able to log in using USER <userid>. The userids available are: owner | admin | user
 >>owner requires the userid, account and password
@@ -75,7 +75,7 @@ Client: FROM SERVER: +localhost SFTP Service
 If you pass in USER owner, you should see the following messages:
 Client: FROM SERVER: +User-id valid, send account and password
 
-###ACCT and PASS
+### ACCT and PASS
 
 >You must now enter the account or password using ACCT <account> or PASS <password> respectively. Whichever you do not enter will be requested next
 
@@ -87,7 +87,7 @@ Client: FROM SERVER: +Account valid, send password
 You should see the following message:
 Client: FROM SERVER: !Logged in
 
-###TYPE
+### TYPE
 
 >If you enter TYPE < A | B | C >, the system will change the currentType to ASCII, Binary or Continuous respectively
 >>By default, the system is set to Binary
@@ -101,7 +101,7 @@ Client: FROM SERVER: +Using Ascii mode
 >>Entering LIST < F | V > without a directory-path will return the files contained in the current directory
 >>LIST V returns the files with extra information including size (in bytes), last modified time, Read-only status and the owner of the file
 
-###LIST
+### LIST
 
 (Open \serverFiles and take notice of the existing files and directories)
 
@@ -120,7 +120,7 @@ Client: FROM SERVER: +PS: <serverFiles>
 
 [Fail case: If you enter LIST G or LIST F Directory2, you will receive the error message: FROM SERVER: -List command not valid]
 
-###CDIR
+### CDIR
 
 >If you enter CDIR <directory-path>, you will be able to change directory
 >>Entering CDIR without a directory-path will move up 1 directory level unless you are in the top level
@@ -136,7 +136,7 @@ Client: FROM SERVER: -Can't connect to directory because: This is the top level 
 
 [Fail case: If you enter CDIR Directory2, you will receive the error message: FROM SERVER: -Can't connect to directory because: Directory does not exist]
 
-###KILL
+### KILL
 
 >If you enter KILL <file-spec>, you will be able to delete the requested file
 
@@ -149,7 +149,7 @@ Client: FROM SERVER: +File1.txt deleted
 
 [Fail case: If you enter KILL asdf.txt, you will receive the error message: FROM SERVER: -Not deleted because: File does not exist]
 
-###NAME
+### NAME
 
 >If you enter NAME <file-spec>, you will be able to rename a file
 
@@ -167,7 +167,7 @@ Client: FROM SERVER: +File2.txt renamed to newname.txt
 
 [Fail case: If you enter TOBE, you will receive the error message: FROM SERVER: -File wasn't renamed because: Invalid new name]
 
-###DONE
+### DONE
 
 >If you enter DONE, you will be able to disconnect from the server
 
@@ -181,7 +181,7 @@ Client: FROM SERVER: +Ending connection
 If you enter USER user, you should see the following message:
 Client: FROM SERVER: !user logged in
 
-###RETR
+### RETR
 
 >If you enter RETR <file-spec>, you will be able to retrieve a file from the server
 >>The response, if successful, if the size of the file in bytes
